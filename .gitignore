@@ -1,0 +1,6 @@
+private/
+.terraform
+*.tfstate
+*.tfstate.*
+.envrc-private
+svcs/minio/data/

@@ -1,0 +1,10 @@
+function create-dns-record(){
+  name=$1
+  ip=$2
+  gcloud dns --project=apj-partner-enablement \
+    record-sets create $name.lab.ws.apj.yugabyte.com. \
+    --zone="ws-apj-yugabyte-com" \
+    --type="A" \
+    --ttl="300" \
+    --rrdatas="$ip"
+}
