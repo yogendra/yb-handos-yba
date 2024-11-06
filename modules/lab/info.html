@@ -1,37 +1,75 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Lab Info ${name}</title>
 </head>
-<body>
 
+<body>
+  <h1>Lab Details</h1>
+  <table>
+    <tbody>
+      <tr>
+        <th>Name</th>
+        <td>${name}</td>
+      </tr>
+      <tr>
+        <th>Jumpbox Webtop</th>
+        <td>${jb-webtop}</td>
+      </tr>
+      <tr>
+        <th>SSH/Webtop User</th>
+        <td>${jb-user}</td>
+      </tr>
+      <tr>
+        <th>SSH/Webtop Password</th>
+        <td>${jb-password}</td>
+      </tr>
+    </tbody>
+    <tbody>
+      %{ for key, value in other ~}
+      <tr>
+        <td> ${key} </td>
+        <td> <code> ${value} </code> </td>
+      </tr>
+      %{ endfor ~}
+    </tbody>
+  </table>
+  <h1>VMs</h1>
   <table>
     <thead>
       <tr>
-        <th>
-          Key
-        </th>
-        <th>
-          Value
-        </th>
+        <th>Name</th>
+        <th>Private IP</th>
+        <th>Private DNS</th>
+        <th>Public IP</th>
+        <th>Public DNS</th>
+        <th>SSH User</th>
+        <th>SSH Password</th>
+        <th>CPU</th>
+        <th>RAM (GB)</th>
+        <th>OS Disk (GB)</th>
       </tr>
     </thead>
     <tbody>
-      %{ for key, value in info ~}
+      %{ for vm in vms ~}
       <tr>
-        <td>
-          ${key}
-        </td>
-        <td>
-          <code>
-          ${value}
-          </code>
-        </td>
+        <td>${vm.name}</td>
+        <td>${vm.private_ip}</td>
+        <td>${vm.private_dns}</td>
+        <td>${vm.public_ip}</td>
+        <td>${vm.public_dns}</td>
+        <td>${vm.ssh-user}</td>
+        <td>${vm.ssh-password}</td>
+        <td>${vm.cpu}</td>
+        <td>${vm.ram}</td>
+        <td>${vm.os_disk}</td>
       </tr>
       %{ endfor ~}
     </tbody>
   </table>
 </body>
+
 </html>
