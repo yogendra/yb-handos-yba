@@ -1,0 +1,64 @@
+#!/bin/bash
+
+# Enable password authentication for SSH
+sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Create the ybadmin user
+useradd -m -s /bin/bash ybadmin
+echo "ybadmin:${ybadmin-password}" | chpasswd
+
+# Allow ybadmin to run sudo commands without a password
+echo "ybadmin  ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ybadmin
+
+# Add SSH key for ybadmin
+mkdir -p /home/ybadmin/.ssh
+cat <<EOF > /home/ybadmin/.ssh/authorized_keys
+%{ for public-key in ybadmin-authorized-keys ~}
+${public-key}
+%{ endfor ~}
+EOF
+chown -R ybadmin:ybadmin /home/ybadmin/.ssh
+chmod 700 /home/ybadmin/.ssh
+chmod 600 /home/ybadmin/.ssh/authorized_keys
+
+
+cat <<EOF > /home/ybadmin/ca.crt
+${ca-crt}
+EOF
+cat <<EOF > /home/ybadmin/server.key
+${server-key}
+EOF
+cat <<EOF > /home/ybadmin/server.crt
+${server-crt}
+EOF
+chown ybadmin:ybadmin /home/ybadmin/ca.crt /home/ybadmin/server.crt /home/ybadmin/server.key
+chmod 0644 /home/ybadmin/ca.crt /home/ybadmin/server.crt /home/ybadmin/server.key
+cp /home/ybadmin/ca.crt /etc/pki/ca-trust/source/anchors/
+
+
+yum install -y yum-utils
+yum-config-manager -y --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+yum install -y docker-ce docker-ce-cli containerd.io unzip
+usermod -aG docker ybadmin
+systemctl enable --now docker
+
+
+docker run -d \
+  --name=webtop \
+  --security-opt seccomp=unconfined  \
+  -e CUSTOM_USER=ybadmin \
+  -e PASSWORD="${ybadmin-password}" \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Etc/UTC \
+  -e SUBFOLDER=/  \
+  -e TITLE=Webtop  \
+  -p 3000:3000 \
+  -p 3001:3001 \
+  -v /opt/webtop:/config \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  --privileged \
+  --shm-size="1gb"  \
+  --restart unless-stopped \
+  lscr.io/linuxserver/webtop:latest

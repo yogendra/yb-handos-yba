@@ -1,0 +1,143 @@
+#!/bin/bash
+
+# Enable password authentication for SSH
+sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Create the ybadmin user
+useradd -m -s /bin/bash ybadmin
+echo "ybadmin:${ybadmin-password}" | chpasswd
+
+# Allow ybadmin to run sudo commands without a password
+echo "ybadmin  ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/ybadmin
+
+# Add SSH key for ybadmin
+mkdir -p /home/ybadmin/.ssh
+cat <<EOF > /home/ybadmin/.ssh/authorized_keys
+%{ for public-key in ybadmin-authorized-keys ~}
+${public-key}
+%{ endfor ~}
+EOF
+chown -R ybadmin:ybadmin /home/ybadmin/.ssh
+chmod 700 /home/ybadmin/.ssh
+chmod 600 /home/ybadmin/.ssh/authorized_keys
+
+cat <<EOF > /home/ybadmin/ca.crt
+${ca-crt}
+EOF
+cat <<EOF > /home/ybadmin/server.key
+${server-key}
+EOF
+cat <<EOF > /home/ybadmin/server.crt
+${server-crt}
+EOF
+chown ybadmin:ybadmin /home/ybadmin/ca.crt /home/ybadmin/server.crt /home/ybadmin/server.key
+chmod 0644 /home/ybadmin/ca.crt /home/ybadmin/server.crt /home/ybadmin/server.key
+cp /home/ybadmin/ca.crt /etc/pki/ca-trust/source/anchors/
+
+dnf install yum-utils
+yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+dnf install docker-ce docker-ce-cli containerd.io
+usermod -aG docker ybadmin
+systemctl enable --now docker
+
+yum install -y yum-utils policycoreutils-python-utils unzip jq curl tmux
+yum-config-manager -y --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+yum install -y docker-ce docker-ce-cli containerd.io unzip
+usermod -aG docker ybadmin
+systemctl enable --now docker
+python3 -m pip install selinux
+
+cat <<EOF > /home/ybadmin/yba.lic
+${yba-lic}
+EOF
+chown ybadmin:ybadmin /home/ybadmin/yba.lic
+
+yum-config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo
+yum -y install vault
+
+cat <<EOF /etc/vault.d/vault.hcl
+storage "file" {
+  path = "/opt/vault/data"
+}
+storage "raft" {
+  path  = "/opt/vault/raft"
+  node_id = "node1"
+}
+
+listener "tcp" {
+  address   = "0.0.0.0:8200"
+  tls_disable = "true"
+}
+
+api_addr = "http://127.0.0.1:8200"
+cluster_addr = "https://127.0.0.1:8201"
+ui = true
+disable_mlock = true
+default_lease_ttl = "768h"
+max_lease_ttl = "8760h"
+EOF
+
+cat <<EOF > /opt/vault/yba.hcl
+path "transit/*" {
+  capabilities = ["create", "read", "update", "delete", "list"]
+}
+
+path "auth/token/lookup-self" {
+        capabilities = ["read"]
+}
+
+path "sys/capabilities-self" {
+        capabilities = ["read", "update"]
+}
+
+path "auth/token/renew-self" {
+        capabilities = ["update"]
+}
+
+path "sys/*" {
+        capabilities = ["read"]
+}
+EOF
+export VAULT_ADDR=http://127.0.0.1:8200
+systemctl enable --now vault
+if [[ /opt/vault/vault-init.json ]]
+then
+  vault operator init -key-shares=1 -key-threshold=1 -format=json > /opt/vault/vault-init.json
+fi
+
+VAULT_UNSEAL_KEY=$(cat /opt/vault/vault-init.json | jq -r '.unseal_keys_b64[0]')
+VAULT_TOKEN=$(cat /opt/vault/vault-init.json | jq -r '.root_token')
+vault operator unseal "$VAULT_UNSEAL_KEY"
+vault login -no-print $VAULT_TOKEN
+if [[ ! -f  /opt/vault/yba-token.json ]]; then
+  echo Init Setup - login
+  vault auth enable userpass
+  vault write auth/userpass/users/ybadmin password="${ybadmin-password}"
+  echo Init Setup - transit
+  vault secrets enable transit
+  echo Init Setup - YBA Policy
+  vault policy write yba /opt/vault/yba.hcl
+  echo Init Setup - YBA Token
+  vault token create -no-default-policy -policy=yba --period=32d --format=json > /opt/vault/yba-token.json
+fi
+
+mkdir -p /opt/minio/data
+
+docker run \
+   -p 9000:9000 \
+   -p 9001:9001 \
+   --name minio \
+   --restart=unless-stopped
+   -v /opt/minio/data:/data \
+   -e "MINIO_ROOT_USER=ybadmin" \
+   -e "MINIO_ROOT_PASSWORD=${ybadmin-password}" \
+   quay.io/minio/minio server /data --console-address ":9001"
+
+YBA_RELEASE="${yba-version}"
+YBA_VERSION=$${YBA_RELEASE%-*}
+
+
+curl -sSL https://downloads.yugabyte.com/releases/$YBA_VERSION/yba_installer_full-$YBA_RELEASE-linux-x86_64.tar.gz -o /opt/yba_installer_full-$YBA_RELEASE-linux-x86_64.tar.gz
+tar -C /opt -xf yba_installer_full-$YBA_RELEASE-linux-x86_64.tar.gz
+chown -R ybadmin:ybadmin /opt/yba_installer_full-$YBA_RELEASE-linux-x86_64.tar.gz /opt/yba_installer_full-$YBA_RELEASE
