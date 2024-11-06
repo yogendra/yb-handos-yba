@@ -19,6 +19,7 @@ variable "public_zone_id" {
 variable "known_cidrs" {
   type = list(string)
   description = "List of know CIDRs"
+  default = []
 }
 variable "ybadmin-password" {
   type = string
@@ -33,6 +34,7 @@ variable "ybadmin-authorized-keys" {
 variable "network-cidr" {
   type = string
   description = "Network CIDR for lab"
+  default = "10.0.0.0/24"
 }
 
 variable "region" {
@@ -42,4 +44,24 @@ variable "region" {
 variable "zone" {
   type = string
   description = "Zone"
+}
+variable "ybalic" {
+  type = string
+  description = "YBA license"
+}
+variable "certsdir" {
+  type = string
+  description = "Location of cert DIR containing ca.key, ca.crt server.crt and server.key"
+}
+
+variable "yba-version" {
+  type = string
+  description = "YBA Version"
+  default = "2024.1.3.0-b105"
+}
+
+variable "db-node-count" {
+  type = number
+  description = "No of DB Nodes to provision"
+  default = 8
 }
